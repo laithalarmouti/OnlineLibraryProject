@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Online Library System</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+
+    #authSection {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 30px;
+    }
+
+    .auth-toggle {
+      color: #1a73e8;
+      cursor: pointer;
+      margin-top: 10px;
+      text-decoration: underline;
+    }
+
+    .category {
+      background: white;
+      margin: 20px 0;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .book {
+      margin: 15px 0;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      border-left: 4px solid #1a73e8;
+    }
+
+    button {
+      background: #1a73e8;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+
+    button:hover {
+      background: #1557b0;
+    }
+
+    .available { color: #34a853; }
+    .unavailable { color: #ea4335; }
+    input[type="text"], input[type="email"] {
+      padding: 8px;
+      margin: 5px 0;
+      width: 250px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+
+    #mainContent {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+<div id="authSection">
+  <div id="loginForm">
+    <h2>Login to Library</h2>
+    <input type="email" id="loginEmail" placeholder="Enter your email">
+    <button onclick="login()">Login</button>
+    <p class="auth-toggle" onclick="showSignup()">Create new account</p>
+  </div>
+
+  <div id="signupForm" style="display: none;">
+    <h2>Create New Account</h2>
+    <input type="text" id="signupName" placeholder="Your full name">
+    <input type="email" id="signupEmail" placeholder="Your email address">
+    <button onclick="signup()">Create Account</button>
+    <p class="auth-toggle" onclick="showLogin()">Already have an account? Login</p>
+  </div>
+</div>
+
+<div id="mainContent">
+  <h2>Welcome, <span id="currentUser"></span></h2>
+  <div id="categoriesContainer"></div>
+</div>
+
+<script>
+
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log('System initialized');
+  });
+
+  let currentUser = null;
+
+  function showSignup() {
+    document.getElementById('loginForm').style.display = 'none';
+    document.getElementById('signupForm').style.display = 'block';
+  }
+
+  function showLogin() {
+    document.getElementById('signupForm').style.display = 'none';
+    document.getElementById('loginForm').style.display = 'block';
+  }
+
+  async function login() {
+    const email = document.getElementById('loginEmail').value.trim();
+    if (!validateEmail(email)) {
+      alert('Please enter a valid email address');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/users/login?email=${encodeURIComponent(email)}`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error);
+      }
+
+      const user = await response.json();
+      currentUser = user.email;
+      updateUI();
+      loadCategories();
+    } catch (error) {
+      alert(error.message);
+      console.error('Login error:', error);
+    }
+  }
+
+
+  async function signup() {
+    const name = document.getElementById('signupName').value.trim();
+    const email = document.getElementById('signupEmail').value.trim();
+
+    if (!validateEmail(email) || name.length < 2) {
+      alert('Please enter valid name (2+ characters) and email');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(error);
+      }
+
+      alert('Account created successfully!');
+      showLogin();
+    } catch (error) {
+      alert(error.message);
+      console.error('Signup error:', error);
+    }
+  }
+
+  async function loadCategories() {
+    try {
+      const categoriesResponse = await fetch('/api/categories');
+      const categories = await categoriesResponse.json();
+      const container = document.getElementById('categoriesContainer');
+      container.innerHTML = '';
+
+      for (const category of categories) {
+        const categoryDiv = document.createElement('div');
+        categoryDiv.className = 'category';
+        categoryDiv.innerHTML = `<h3>${category.name}</h3>`;
+
+        const booksResponse = await fetch(`/api/books?categoryId=${category.categoryId}`);
+        const books = await booksResponse.json();
+
+
+        books.forEach(book => {
+          const bookDiv = document.createElement('div');
+          bookDiv.className = 'book';
+          bookDiv.innerHTML = `
+    <h4>${book.title} by ${book.author}</h4>
+    <div class="${book.available ? 'available' : 'unavailable'}">
+      Status: ${book.available ? 'Available' : 'Checked Out'}
+      ${!book.available ? `(Due: ${new Date(book.dueDate).toLocaleDateString()})` : ''}
+    </div>
+    <div class="actions">
+      ${getBookActions(book)}
+    </div>
+  `;
+          categoryDiv.appendChild(bookDiv);
+        });
+
+        container.appendChild(categoryDiv);
+      }
+    } catch (error) {
+      alert('Failed to load library data');
+      console.error('Data load error:', error);
+    }
+  }
+
+  function getBookActions(book) {
+    if (book.available) {
+      return `<button onclick="orderBook('${book.bookId}')">Take Book</button>`;
+    }
+    if (book.currentHolder === currentUser) {
+      return `<button onclick="returnBook('${book.bookId}')">Return Book</button>`;
+    }
+    if (book.currentHolder) {
+      return `
+        <button onclick="requestBook('${book.bookId}', false)">Request Book</button>
+        <button onclick="requestBook('${book.bookId}', true)">Request with Meeting</button>
+      `;
+    }
+    return '';
+  }
+
+  async function orderBook(bookId) {
+    try {
+      await fetch(`/api/books/${bookId}/order?userEmail=${encodeURIComponent(currentUser)}`, {
+        method: 'POST'
+      });
+      loadCategories();
+      alert('Book borrowed successfully!');
+    } catch (error) {
+      alert('Failed to borrow book: ' + error.message);
+    }
+  }
+
+  async function returnBook(bookId) {
+    try {
+      await fetch(`/api/books/${bookId}/return`, {
+        method: 'POST'
+      });
+      loadCategories();
+      alert('Book returned successfully!');
+    } catch (error) {
+      alert('Return failed: ' + error.message);
+    }
+  }
+
+  async function requestBook(bookId, withMeeting) {
+    try {
+      const response = await fetch(
+              `/api/books/${bookId}/request?requesterEmail=${encodeURIComponent(currentUser)}&withMeeting=${withMeeting}`,
+              { method: 'POST' }
+      );
+
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        throw new Error(errorMessage);
+      }
+
+      alert('Request submitted successfully!');
+    } catch (error) {
+      alert('Request failed: ' + error.message);
+    }
+  }
+
+    //refresh
+  function updateUI() {
+    const authSection = document.getElementById('authSection');
+    const mainContent = document.getElementById('mainContent');
+
+    if (authSection && mainContent) {
+      authSection.style.display = 'none';
+      mainContent.style.display = 'block';
+      document.getElementById('currentUser').textContent = currentUser;
+    } else {
+      console.error('UI elements missing');
+    }
+  }
+  //validation
+  function validateEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+</script>
+</body>
+</html>
